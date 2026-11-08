@@ -1,0 +1,1074 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # First run only: creates all FitPDF project files and commits them to this repo.
+      - name: Create project files
+        run: |
+          if [ -f app/build.gradle.kts ]; then echo "Project files already exist"; exit 0; fi
+          mkdir -p "$(dirname '.gitignore')"
+          cat > '.gitignore' <<'FITPDF_EOF'
+          *.iml
+          .gradle/
+          build/
+          local.properties
+          .idea/
+          .DS_Store
+          captures/
+          .externalNativeBuild/
+          .cxx/
+          *.apk
+          *.aab
+          *.jks
+          *.keystore
+          FITPDF_EOF
+          mkdir -p "$(dirname 'README.md')"
+          cat > 'README.md' <<'FITPDF_EOF'
+          # FitPDF
+
+          PDF reader যেখানে পেজের উপরে-নিচে-পাশে কোনো ফাঁকা জায়গা থাকে না। অ্যাপ নিজে প্রতিটি পেজ স্ক্যান করে লেখার সীমানা খুঁজে বের করে, বাকি সাদা অংশ কেটে ফেলে, আর পেজগুলো একটার পর একটা জোড়া লাগিয়ে দেখায়।
+
+          ## Features
+          - **Auto Trim**: প্রতি পেজের উপর-নিচের ফাঁকা অংশ বাদ। বাম-ডানের মার্জিন পুরো ডকুমেন্টে একই থাকে, তাই লাইন এলোমেলো হয় না।
+          - **Full-screen**: পড়ার সময় status bar ও navigation bar লুকানো থাকে। স্ক্রিনে ট্যাপ করলে কন্ট্রোল আসে।
+          - সম্পূর্ণ ফাঁকা পেজ নিজে থেকে স্কিপ।
+          - Night mode (রং উল্টে দেয়), Zoom 1× / 1.5× / 2× / 3×।
+          - ফাইল ম্যানেজার, ব্রাউজার বা চ্যাট অ্যাপ থেকে "Open with → FitPDF"।
+          - বাংলা ও ইংরেজি UI।
+          - কোনো থার্ড-পার্টি PDF লাইব্রেরি নেই, Android-এর নিজস্ব `PdfRenderer` ব্যবহার হয়েছে।
+
+          ## GitHub দিয়ে APK বানানো
+          1. GitHub এ নতুন repository খুলুন এবং এই ফোল্ডারের সব ফাইল push করুন (`.github` ফোল্ডারসহ)।
+          2. **Actions** ট্যাবে `Build APK` চলবে। শেষ হলে run-এর নিচে **Artifacts → FitPDF-apk** থেকে APK নামান।
+          3. Release পাবলিশ করতে একটি tag push করুন:
+             ```bash
+             git tag v1.0.0
+             git push origin v1.0.0
+             ```
+             তাহলে **Releases** পেজে `FitPDF.apk` নিজে থেকে যুক্ত হবে।
+
+          ## নিজের কম্পিউটারে বানাতে
+          Android Studio-তে ফোল্ডারটি Open করুন, অথবা JDK 17 ও Gradle 8.7 থাকলে:
+          ```bash
+          gradle assembleDebug
+          ```
+
+          ## কাস্টমাইজ
+          `PdfEngine.kt` এর উপরের ধ্রুবকগুলো:
+          - `PAD_X`, `PAD_Y`: কনটেন্টের চারপাশে কতটুকু নিরাপদ ফাঁকা রাখা হবে।
+          - `INK_THRESHOLD`: কত হালকা রঙকে "সাদা" ধরা হবে।
+          FITPDF_EOF
+          mkdir -p "$(dirname 'app/build.gradle.kts')"
+          cat > 'app/build.gradle.kts' <<'FITPDF_EOF'
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }
+
+          android {
+              namespace = "com.fitpdf.app"
+              compileSdk = 35
+
+              defaultConfig {
+                  applicationId = "com.fitpdf.app"
+                  minSdk = 26
+                  targetSdk = 34
+                  versionCode = 1
+                  versionName = "1.0.0"
+              }
+
+              buildTypes {
+                  release {
+                      isMinifyEnabled = false
+                  }
+              }
+
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+              buildFeatures {
+                  compose = true
+              }
+              composeOptions {
+                  kotlinCompilerExtensionVersion = "1.5.14"
+              }
+              packaging {
+                  resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+              }
+          }
+
+          dependencies {
+              implementation("androidx.core:core-ktx:1.13.1")
+              implementation("androidx.activity:activity-compose:1.9.1")
+
+              implementation(platform("androidx.compose:compose-bom:2024.06.00"))
+              implementation("androidx.compose.ui:ui")
+              implementation("androidx.compose.foundation:foundation")
+              implementation("androidx.compose.material3:material3")
+          }
+          FITPDF_EOF
+          mkdir -p "$(dirname 'app/src/main/AndroidManifest.xml')"
+          cat > 'app/src/main/AndroidManifest.xml' <<'FITPDF_EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <application
+                  android:allowBackup="true"
+                  android:icon="@mipmap/ic_launcher"
+                  android:label="@string/app_name"
+                  android:supportsRtl="true"
+                  android:theme="@style/Theme.FitPDF">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout|uiMode"
+                      android:launchMode="singleTask">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+
+                      <!-- "Open with" support for PDF files from file managers, browsers, chat apps -->
+                      <intent-filter>
+                          <action android:name="android.intent.action.VIEW" />
+                          <category android:name="android.intent.category.DEFAULT" />
+                          <category android:name="android.intent.category.BROWSABLE" />
+                          <data android:scheme="content" />
+                          <data android:scheme="file" />
+                          <data android:mimeType="application/pdf" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          FITPDF_EOF
+          mkdir -p "$(dirname 'app/src/main/java/com/fitpdf/app/MainActivity.kt')"
+          cat > 'app/src/main/java/com/fitpdf/app/MainActivity.kt' <<'FITPDF_EOF'
+          package com.fitpdf.app
+
+          import android.app.Activity
+          import android.content.Intent
+          import android.net.Uri
+          import android.os.Build
+          import android.os.Bundle
+          import android.view.WindowManager
+          import androidx.activity.ComponentActivity
+          import androidx.activity.compose.BackHandler
+          import androidx.activity.compose.rememberLauncherForActivityResult
+          import androidx.activity.compose.setContent
+          import androidx.activity.enableEdgeToEdge
+          import androidx.activity.result.contract.ActivityResultContracts
+          import androidx.compose.animation.AnimatedVisibility
+          import androidx.compose.animation.fadeIn
+          import androidx.compose.animation.fadeOut
+          import androidx.compose.foundation.Canvas
+          import androidx.compose.foundation.Image
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.gestures.detectTapGestures
+          import androidx.compose.foundation.horizontalScroll
+          import androidx.compose.foundation.layout.Arrangement
+          import androidx.compose.foundation.layout.Box
+          import androidx.compose.foundation.layout.Column
+          import androidx.compose.foundation.layout.Row
+          import androidx.compose.foundation.layout.Spacer
+          import androidx.compose.foundation.layout.aspectRatio
+          import androidx.compose.foundation.layout.fillMaxSize
+          import androidx.compose.foundation.layout.fillMaxWidth
+          import androidx.compose.foundation.layout.height
+          import androidx.compose.foundation.layout.navigationBarsPadding
+          import androidx.compose.foundation.layout.padding
+          import androidx.compose.foundation.layout.size
+          import androidx.compose.foundation.layout.statusBarsPadding
+          import androidx.compose.foundation.layout.width
+          import androidx.compose.foundation.lazy.LazyColumn
+          import androidx.compose.foundation.lazy.itemsIndexed
+          import androidx.compose.foundation.lazy.rememberLazyListState
+          import androidx.compose.foundation.rememberScrollState
+          import androidx.compose.foundation.shape.CircleShape
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.material3.Button
+          import androidx.compose.material3.ButtonDefaults
+          import androidx.compose.material3.CircularProgressIndicator
+          import androidx.compose.material3.ExperimentalMaterial3Api
+          import androidx.compose.material3.FilterChip
+          import androidx.compose.material3.FilterChipDefaults
+          import androidx.compose.material3.LinearProgressIndicator
+          import androidx.compose.material3.MaterialTheme
+          import androidx.compose.material3.Text
+          import androidx.compose.material3.TextButton
+          import androidx.compose.material3.darkColorScheme
+          import androidx.compose.runtime.Composable
+          import androidx.compose.runtime.DisposableEffect
+          import androidx.compose.runtime.LaunchedEffect
+          import androidx.compose.runtime.SideEffect
+          import androidx.compose.runtime.derivedStateOf
+          import androidx.compose.runtime.getValue
+          import androidx.compose.runtime.mutableStateOf
+          import androidx.compose.runtime.remember
+          import androidx.compose.runtime.saveable.rememberSaveable
+          import androidx.compose.runtime.setValue
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.draw.clip
+          import androidx.compose.ui.geometry.CornerRadius
+          import androidx.compose.ui.geometry.Offset
+          import androidx.compose.ui.geometry.Size
+          import androidx.compose.ui.graphics.Brush
+          import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.graphics.ColorFilter
+          import androidx.compose.ui.graphics.ColorMatrix
+          import androidx.compose.ui.graphics.FilterQuality
+          import androidx.compose.ui.graphics.StrokeCap
+          import androidx.compose.ui.graphics.asImageBitmap
+          import androidx.compose.ui.graphics.drawscope.Stroke
+          import androidx.compose.ui.input.pointer.pointerInput
+          import androidx.compose.ui.layout.ContentScale
+          import androidx.compose.ui.platform.LocalConfiguration
+          import androidx.compose.ui.platform.LocalContext
+          import androidx.compose.ui.platform.LocalDensity
+          import androidx.compose.ui.platform.LocalView
+          import androidx.compose.ui.res.stringResource
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.text.style.TextAlign
+          import androidx.compose.ui.unit.dp
+          import androidx.compose.ui.unit.sp
+          import androidx.compose.foundation.text.KeyboardOptions
+          import androidx.compose.material3.AlertDialog
+          import androidx.compose.material3.OutlinedTextField
+          import androidx.compose.ui.text.input.KeyboardType
+          import androidx.compose.ui.text.input.PasswordVisualTransformation
+          import androidx.core.view.WindowCompat
+          import androidx.core.view.WindowInsetsCompat
+          import androidx.core.view.WindowInsetsControllerCompat
+
+          class MainActivity : ComponentActivity() {
+
+              private var docUri by mutableStateOf<Uri?>(null)
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  enableEdgeToEdge()
+                  // Let content draw into the camera cutout area too: no black strip at the top.
+                  if (Build.VERSION.SDK_INT >= 28) {
+                      window.attributes.layoutInDisplayCutoutMode =
+                          WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                  }
+                  docUri = intent?.data
+                  setContent {
+                      FitPdfTheme {
+                          App(
+                              uri = docUri,
+                              onPicked = { docUri = it },
+                              onClose = { docUri = null },
+                          )
+                      }
+                  }
+              }
+
+              override fun onNewIntent(intent: Intent) {
+                  super.onNewIntent(intent)
+                  intent.data?.let { docUri = it }
+              }
+          }
+
+          // ───────────────────────────── Theme ─────────────────────────────
+
+          private val Indigo = Color(0xFF6366F1)
+          private val Ink = Color(0xFF0F172A)
+
+          @Composable
+          fun FitPdfTheme(content: @Composable () -> Unit) {
+              MaterialTheme(
+                  colorScheme = darkColorScheme(
+                      primary = Indigo,
+                      secondary = Color(0xFFFDE047),
+                      background = Ink,
+                      surface = Color(0xFF1E293B),
+                  ),
+                  content = content,
+              )
+          }
+
+          // ───────────────────────────── App shell ─────────────────────────────
+
+          @Composable
+          fun App(uri: Uri?, onPicked: (Uri) -> Unit, onClose: () -> Unit) {
+              val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { picked ->
+                  if (picked != null) onPicked(picked)
+              }
+              val pick = { picker.launch(arrayOf("application/pdf")) }
+
+              if (uri == null) {
+                  SystemBars(visible = true)
+                  HomeScreen(onOpen = pick)
+              } else {
+                  ReaderScreen(uri = uri, onOpenOther = pick, onClose = onClose)
+              }
+          }
+
+          @Composable
+          private fun SystemBars(visible: Boolean) {
+              val view = LocalView.current
+              SideEffect {
+                  val window = (view.context as Activity).window
+                  val controller = WindowCompat.getInsetsController(window, view)
+                  controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                  if (visible) controller.show(WindowInsetsCompat.Type.systemBars())
+                  else controller.hide(WindowInsetsCompat.Type.systemBars())
+              }
+          }
+
+          // ───────────────────────────── Home ─────────────────────────────
+
+          @Composable
+          fun HomeScreen(onOpen: () -> Unit) {
+              Box(
+                  Modifier
+                      .fillMaxSize()
+                      .background(Brush.verticalGradient(listOf(Color(0xFF0F172A), Color(0xFF312E81)))),
+                  contentAlignment = Alignment.Center,
+              ) {
+                  Column(
+                      horizontalAlignment = Alignment.CenterHorizontally,
+                      modifier = Modifier.padding(32.dp),
+                  ) {
+                      FitLogo(Modifier.size(120.dp))
+                      Spacer(Modifier.height(28.dp))
+                      Text(
+                          stringResource(R.string.app_name),
+                          color = Color.White,
+                          fontSize = 40.sp,
+                          fontWeight = FontWeight.ExtraBold,
+                      )
+                      Spacer(Modifier.height(8.dp))
+                      Text(
+                          stringResource(R.string.tagline),
+                          color = Color.White.copy(alpha = 0.7f),
+                          fontSize = 16.sp,
+                          textAlign = TextAlign.Center,
+                      )
+                      Spacer(Modifier.height(40.dp))
+                      Button(
+                          onClick = onOpen,
+                          shape = RoundedCornerShape(50),
+                          colors = ButtonDefaults.buttonColors(containerColor = Indigo),
+                          modifier = Modifier.height(56.dp),
+                      ) {
+                          Text(
+                              stringResource(R.string.open_pdf),
+                              fontSize = 18.sp,
+                              fontWeight = FontWeight.SemiBold,
+                              modifier = Modifier.padding(horizontal = 24.dp),
+                          )
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          private fun FitLogo(modifier: Modifier = Modifier) {
+              Canvas(modifier) {
+                  val s = size.minDimension
+                  // page
+                  drawRoundRect(
+                      color = Color.White,
+                      topLeft = Offset(s * 0.27f, s * 0.2f),
+                      size = Size(s * 0.46f, s * 0.6f),
+                      cornerRadius = CornerRadius(s * 0.05f),
+                  )
+                  for (i in 0..2) {
+                      drawRoundRect(
+                          color = Indigo,
+                          topLeft = Offset(s * 0.34f, s * (0.34f + i * 0.12f)),
+                          size = Size(if (i == 2) s * 0.2f else s * 0.32f, s * 0.03f),
+                          cornerRadius = CornerRadius(s * 0.015f),
+                      )
+                  }
+                  // corner brackets
+                  val stroke = Stroke(width = s * 0.04f, cap = StrokeCap.Round)
+                  val y = Color(0xFFFDE047)
+                  val a = s * 0.1f; val b = s * 0.9f; val l = s * 0.2f
+                  fun corner(x: Float, yy: Float, dx: Float, dy: Float) {
+                      drawLine(y, Offset(x, yy), Offset(x + dx * l, yy), stroke.width, StrokeCap.Round)
+                      drawLine(y, Offset(x, yy), Offset(x, yy + dy * l), stroke.width, StrokeCap.Round)
+                  }
+                  corner(a, a, 1f, 1f); corner(b, a, -1f, 1f)
+                  corner(a, b, 1f, -1f); corner(b, b, -1f, -1f)
+              }
+          }
+
+          // ───────────────────────────── Reader ─────────────────────────────
+
+          private val ZOOM_LEVELS = listOf(1f, 1.5f, 2f, 3f)
+          private val INVERT = ColorFilter.colorMatrix(
+              ColorMatrix(
+                  floatArrayOf(
+                      -1f, 0f, 0f, 0f, 255f,
+                      0f, -1f, 0f, 0f, 255f,
+                      0f, 0f, -1f, 0f, 255f,
+                      0f, 0f, 0f, 1f, 0f,
+                  )
+              )
+          )
+
+          private sealed interface LoadState {
+              data class Working(val done: Int, val total: Int) : LoadState
+              data class Ready(val engine: PdfEngine, val analysis: Analysis) : LoadState
+              data class NeedsPassword(val wrong: Boolean) : LoadState
+              data class Failed(val messageRes: Int) : LoadState
+          }
+
+          @OptIn(ExperimentalMaterial3Api::class)
+          @Composable
+          fun ReaderScreen(uri: Uri, onOpenOther: () -> Unit, onClose: () -> Unit) {
+              val context = LocalContext.current
+
+              var load by remember(uri) { mutableStateOf<LoadState>(LoadState.Working(0, 1)) }
+              var trim by rememberSaveable { mutableStateOf(true) }
+              var night by rememberSaveable { mutableStateOf(false) }
+              var zoomIndex by rememberSaveable { mutableStateOf(0) }
+              var showBars by rememberSaveable { mutableStateOf(false) }
+
+              // Open + analyze. The engine is closed when the screen leaves composition or the file changes.
+              val holder = remember(uri) { arrayOfNulls<PdfEngine>(1) }
+              DisposableEffect(uri) { onDispose { holder[0]?.close() } }
+              var password by remember(uri) { mutableStateOf<String?>(null) }
+              LaunchedEffect(uri, password) {
+                  load = LoadState.Working(0, 1)
+                  try {
+                      val engine = PdfEngine.open(context, uri, password)
+                      holder[0] = engine
+                      val analysis = engine.analyze { done, total -> load = LoadState.Working(done, total) }
+                      load = LoadState.Ready(engine, analysis)
+                  } catch (t: Throwable) {
+                      if (t is kotlinx.coroutines.CancellationException) throw t
+                      load = if (t is SecurityException) {
+                          // Protected PDF: ask for the password (Android 15+), otherwise explain.
+                          if (Build.VERSION.SDK_INT >= 35) LoadState.NeedsPassword(wrong = password != null)
+                          else LoadState.Failed(R.string.error_password_old)
+                      } else {
+                          LoadState.Failed(R.string.error_open)
+                      }
+                  }
+              }
+
+              BackHandler { onClose() }
+              // While reading, hide the status/navigation bars together with the overlay → truly full screen.
+              SystemBars(visible = showBars || load !is LoadState.Ready)
+
+              val pageBg = if (night) Color.Black else Color.White
+
+              Box(
+                  Modifier
+                      .fillMaxSize()
+                      .background(pageBg)
+                      .pointerInput(Unit) { detectTapGestures(onTap = { showBars = !showBars }) }
+              ) {
+                  when (val s = load) {
+                      is LoadState.Working -> Column(
+                          Modifier.align(Alignment.Center).padding(40.dp),
+                          horizontalAlignment = Alignment.CenterHorizontally,
+                      ) {
+                          CircularProgressIndicator(color = Indigo)
+                          Spacer(Modifier.height(20.dp))
+                          LinearProgressIndicator(
+                              progress = { s.done / s.total.toFloat() },
+                              color = Indigo,
+                              modifier = Modifier.fillMaxWidth(0.6f),
+                          )
+                          Spacer(Modifier.height(12.dp))
+                          Text(
+                              stringResource(R.string.analyzing, s.done, s.total),
+                              color = if (night) Color.White else Color(0xFF334155),
+                          )
+                      }
+
+                      is LoadState.NeedsPassword -> PasswordDialog(
+                          wrong = s.wrong,
+                          onSubmit = { password = it },
+                          onCancel = onClose,
+                      )
+
+                      is LoadState.Failed -> Column(
+                          Modifier.align(Alignment.Center).padding(40.dp),
+                          horizontalAlignment = Alignment.CenterHorizontally,
+                      ) {
+                          Text(
+                              stringResource(s.messageRes),
+                              color = if (night) Color.White else Color(0xFF334155),
+                              textAlign = TextAlign.Center,
+                          )
+                          Spacer(Modifier.height(16.dp))
+                          TextButton(onClick = onClose) { Text(stringResource(R.string.close)) }
+                      }
+
+                      is LoadState.Ready -> {
+                          val pages = remember(s, trim) {
+                              // With trimming on, completely blank pages are skipped.
+                              if (trim) s.analysis.pages.filter { it.content != null } else s.analysis.pages
+                          }
+                          val zoom = ZOOM_LEVELS[zoomIndex]
+                          val density = LocalDensity.current
+                          val screenWidthDp = LocalConfiguration.current.screenWidthDp
+                          val renderWidthPx = with(density) { (screenWidthDp.dp.toPx() * zoom).toInt() }
+                              .coerceIn(480, 2600)
+                          val listState = rememberLazyListState()
+
+                          Box(
+                              Modifier
+                                  .fillMaxSize()
+                                  .horizontalScroll(rememberScrollState())
+                          ) {
+                              // No contentPadding, no spacedBy → pages touch each other and the screen edges.
+                              LazyColumn(
+                                  state = listState,
+                                  modifier = Modifier.width((screenWidthDp * zoom).dp).fillMaxSize(),
+                              ) {
+                                  itemsIndexed(pages, key = { _, p -> p.index }) { _, page ->
+                                      PageItem(
+                                          engine = s.engine,
+                                          analysis = s.analysis,
+                                          page = page,
+                                          trim = trim,
+                                          night = night,
+                                          renderWidthPx = renderWidthPx,
+                                      )
+                                  }
+                              }
+                          }
+
+                          val current by remember(listState, pages) {
+                              derivedStateOf { (listState.firstVisibleItemIndex + 1).coerceAtMost(pages.size.coerceAtLeast(1)) }
+                          }
+                          // Small page counter, only visible with the overlay.
+                          AnimatedVisibility(
+                              visible = showBars,
+                              enter = fadeIn(), exit = fadeOut(),
+                              modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 64.dp),
+                          ) {
+                              Text(
+                                  stringResource(R.string.page_counter, current, pages.size),
+                                  color = Color.White,
+                                  fontSize = 13.sp,
+                                  modifier = Modifier
+                                      .clip(CircleShape)
+                                      .background(Color.Black.copy(alpha = 0.6f))
+                                      .padding(horizontal = 14.dp, vertical = 6.dp),
+                              )
+                          }
+
+                          // Top bar
+                          AnimatedVisibility(
+                              visible = showBars,
+                              enter = fadeIn(), exit = fadeOut(),
+                              modifier = Modifier.align(Alignment.TopCenter),
+                          ) {
+                              Row(
+                                  Modifier
+                                      .fillMaxWidth()
+                                      .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.75f), Color.Transparent)))
+                                      .statusBarsPadding()
+                                      .padding(horizontal = 8.dp, vertical = 4.dp),
+                                  verticalAlignment = Alignment.CenterVertically,
+                                  horizontalArrangement = Arrangement.SpaceBetween,
+                              ) {
+                                  TextButton(onClick = onClose) { Text("✕  " + stringResource(R.string.close), color = Color.White) }
+                                  TextButton(onClick = onOpenOther) { Text(stringResource(R.string.open_another), color = Color.White) }
+                              }
+                          }
+
+                          // Bottom bar
+                          AnimatedVisibility(
+                              visible = showBars,
+                              enter = fadeIn(), exit = fadeOut(),
+                              modifier = Modifier.align(Alignment.BottomCenter),
+                          ) {
+                              Row(
+                                  Modifier
+                                      .fillMaxWidth()
+                                      .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.8f))))
+                                      .navigationBarsPadding()
+                                      .padding(horizontal = 12.dp, vertical = 10.dp),
+                                  verticalAlignment = Alignment.CenterVertically,
+                                  horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                              ) {
+                                  val chipColors = FilterChipDefaults.filterChipColors(
+                                      containerColor = Color(0x33FFFFFF),
+                                      labelColor = Color.White,
+                                      selectedContainerColor = Indigo,
+                                      selectedLabelColor = Color.White,
+                                  )
+                                  FilterChip(
+                                      selected = trim, onClick = { trim = !trim },
+                                      label = { Text(stringResource(R.string.trim)) }, colors = chipColors,
+                                  )
+                                  FilterChip(
+                                      selected = night, onClick = { night = !night },
+                                      label = { Text(stringResource(R.string.night)) }, colors = chipColors,
+                                  )
+                                  FilterChip(
+                                      selected = zoomIndex > 0,
+                                      onClick = { zoomIndex = (zoomIndex + 1) % ZOOM_LEVELS.size },
+                                      label = {
+                                          Text(stringResource(R.string.zoom_fmt, ZOOM_LEVELS[zoomIndex].toString().removeSuffix(".0")))
+                                      },
+                                      colors = chipColors,
+                                  )
+                              }
+                          }
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          private fun PageItem(
+              engine: PdfEngine,
+              analysis: Analysis,
+              page: PageInfo,
+              trim: Boolean,
+              night: Boolean,
+              renderWidthPx: Int,
+          ) {
+              val crop = remember(page, trim, analysis) { PdfEngine.cropFor(page, analysis, trim) }
+              // Reserve the exact final height before the bitmap is ready → no layout jumping while scrolling.
+              val ratio = (crop.width() * page.widthPt) / (crop.height() * page.heightPt)
+
+              var bitmap by remember(page.index, trim, renderWidthPx) {
+                  mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
+              }
+              LaunchedEffect(page.index, trim, renderWidthPx) {
+                  bitmap = engine.render(page, crop, renderWidthPx)?.asImageBitmap()
+              }
+
+              Box(
+                  Modifier
+                      .fillMaxWidth()
+                      .aspectRatio(ratio)
+                      .background(if (night) Color.Black else Color.White)
+              ) {
+                  bitmap?.let {
+                      Image(
+                          bitmap = it,
+                          contentDescription = null,
+                          contentScale = ContentScale.FillBounds,
+                          filterQuality = FilterQuality.High,
+                          colorFilter = if (night) INVERT else null,
+                          modifier = Modifier.fillMaxSize(),
+                      )
+                  }
+              }
+          }
+
+          @Composable
+          private fun PasswordDialog(wrong: Boolean, onSubmit: (String) -> Unit, onCancel: () -> Unit) {
+              var text by remember { mutableStateOf("") }
+              AlertDialog(
+                  onDismissRequest = onCancel,
+                  title = { Text(stringResource(R.string.password_title)) },
+                  text = {
+                      OutlinedTextField(
+                          value = text,
+                          onValueChange = { text = it },
+                          singleLine = true,
+                          label = { Text(stringResource(R.string.password_hint)) },
+                          isError = wrong,
+                          supportingText = if (wrong) {
+                              { Text(stringResource(R.string.password_wrong)) }
+                          } else null,
+                          visualTransformation = PasswordVisualTransformation(),
+                          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                      )
+                  },
+                  confirmButton = {
+                      TextButton(onClick = { onSubmit(text) }, enabled = text.isNotEmpty()) {
+                          Text(stringResource(R.string.ok))
+                      }
+                  },
+                  dismissButton = {
+                      TextButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
+                  },
+              )
+          }
+          FITPDF_EOF
+          mkdir -p "$(dirname 'app/src/main/java/com/fitpdf/app/PdfEngine.kt')"
+          cat > 'app/src/main/java/com/fitpdf/app/PdfEngine.kt' <<'FITPDF_EOF'
+          package com.fitpdf.app
+
+          import android.content.Context
+          import android.graphics.Bitmap
+          import android.graphics.Color
+          import android.graphics.Matrix
+          import android.graphics.RectF
+          import android.graphics.pdf.LoadParams
+          import android.graphics.pdf.PdfRenderer
+          import android.net.Uri
+          import android.os.Build
+          import android.util.LruCache
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.ensureActive
+          import kotlinx.coroutines.runBlocking
+          import kotlinx.coroutines.sync.Mutex
+          import kotlinx.coroutines.sync.withLock
+          import kotlinx.coroutines.withContext
+          import kotlin.math.max
+          import kotlin.math.min
+          import kotlin.math.roundToInt
+
+          /** Where the visible content of a page lives, as fractions (0..1) of the page. null = blank page. */
+          class PageInfo(
+              val index: Int,
+              val widthPt: Int,
+              val heightPt: Int,
+              val content: RectF?,
+          )
+
+          /** Result of scanning the whole document. */
+          class Analysis(val pages: List<PageInfo>) {
+              // One shared left/right crop for the whole document, so text columns line up page to page.
+              val unionLeft: Float = pages.mapNotNull { it.content?.left }.minOrNull() ?: 0f
+              val unionRight: Float = pages.mapNotNull { it.content?.right }.maxOrNull() ?: 1f
+          }
+
+          class PdfEngine private constructor(
+              private val renderer: PdfRenderer,
+              private val fd: android.os.ParcelFileDescriptor,
+          ) {
+              // PdfRenderer allows only one open page at a time.
+              private val mutex = Mutex()
+              private var closed = false
+
+              private val cache = object : LruCache<String, Bitmap>(
+                  (Runtime.getRuntime().maxMemory() / 6).toInt().coerceAtLeast(8 * 1024 * 1024)
+              ) {
+                  override fun sizeOf(key: String, value: Bitmap) = value.byteCount
+              }
+
+              val pageCount: Int get() = renderer.pageCount
+
+              /** Scan every page at low resolution and find the bounding box of the non-white pixels. */
+              suspend fun analyze(onProgress: (done: Int, total: Int) -> Unit): Analysis =
+                  withContext(Dispatchers.Default) {
+                      val total = renderer.pageCount
+                      val out = ArrayList<PageInfo>(total)
+                      for (i in 0 until total) {
+                          ensureActive()
+                          out += mutex.withLock { if (closed) null else scanPage(i) } ?: break
+                          onProgress(i + 1, total)
+                      }
+                      Analysis(out)
+                  }
+
+              private fun scanPage(index: Int): PageInfo {
+                  renderer.openPage(index).use { page ->
+                      val w = SCAN_WIDTH
+                      val h = (w * page.height / page.width.toFloat()).roundToInt().coerceIn(1, w * 4)
+                      val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                      bmp.eraseColor(Color.WHITE)
+                      val m = Matrix().apply { setScale(w / page.width.toFloat(), h / page.height.toFloat()) }
+                      page.render(bmp, null, m, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+
+                      val px = IntArray(w * h)
+                      bmp.getPixels(px, 0, w, 0, 0, w, h)
+                      bmp.recycle()
+
+                      val rows = IntArray(h)
+                      val cols = IntArray(w)
+                      // Skip a 1px border: scanner shadows and edge artifacts shouldn't count as content.
+                      for (y in 1 until h - 1) {
+                          for (x in 1 until w - 1) {
+                              val c = px[y * w + x]
+                              val r = (c shr 16) and 0xFF
+                              val g = (c shr 8) and 0xFF
+                              val b = c and 0xFF
+                              if (r < INK_THRESHOLD || g < INK_THRESHOLD || b < INK_THRESHOLD) {
+                                  rows[y]++
+                                  cols[x]++
+                              }
+                          }
+                      }
+                      val top = rows.indexOfFirst { it >= MIN_INK }
+                      val bottom = rows.indexOfLast { it >= MIN_INK }
+                      val left = cols.indexOfFirst { it >= MIN_INK }
+                      val right = cols.indexOfLast { it >= MIN_INK }
+
+                      val box = if (top < 0 || left < 0) null else RectF(
+                          left / w.toFloat(),
+                          top / h.toFloat(),
+                          (right + 1) / w.toFloat(),
+                          (bottom + 1) / h.toFloat(),
+                      )
+                      return PageInfo(index, page.width, page.height, box)
+                  }
+              }
+
+              /** Render [crop] (fractions of the page) to a bitmap exactly [targetWidth] pixels wide. */
+              suspend fun render(page: PageInfo, crop: RectF, targetWidth: Int): Bitmap? {
+                  val key = "${page.index}|${crop.left}|${crop.top}|${crop.right}|${crop.bottom}|$targetWidth"
+                  cache.get(key)?.let { return it }
+                  return mutex.withLock {
+                      cache.get(key)?.let { return@withLock it }
+                      if (closed) return@withLock null
+                      withContext(Dispatchers.Default) {
+                          renderer.openPage(page.index).use { p ->
+                              val cropW = crop.width() * p.width
+                              val cropH = crop.height() * p.height
+                              val scale = targetWidth / cropW
+                              val h = (cropH * scale).roundToInt().coerceIn(1, MAX_BITMAP_HEIGHT)
+                              val bmp = Bitmap.createBitmap(targetWidth, h, Bitmap.Config.ARGB_8888)
+                              bmp.eraseColor(Color.WHITE)
+                              val m = Matrix().apply {
+                                  setScale(scale, scale)
+                                  postTranslate(-crop.left * p.width * scale, -crop.top * p.height * scale)
+                              }
+                              p.render(bmp, null, m, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                              cache.put(key, bmp)
+                              bmp
+                          }
+                      }
+                  }
+              }
+
+              fun close() {
+                  runBlocking {
+                      mutex.withLock {
+                          if (!closed) {
+                              closed = true
+                              cache.evictAll()
+                              runCatching { renderer.close() }
+                              runCatching { fd.close() }
+                          }
+                      }
+                  }
+              }
+
+              companion object {
+                  private const val SCAN_WIDTH = 240
+                  private const val INK_THRESHOLD = 235   // pixel channel below this = not "white"
+                  private const val MIN_INK = 2            // ignore single stray pixels
+                  private const val MAX_BITMAP_HEIGHT = 8192
+
+                  // Safety margin kept around the content (fraction of page).
+                  const val PAD_X = 0.012f
+                  const val PAD_Y = 0.010f
+
+                  /**
+                   * Opens the PDF. A password-protected file throws [SecurityException] (no/wrong password).
+                   * Passwords are supported by the platform PdfRenderer only on Android 15 (API 35)+.
+                   */
+                  fun open(context: Context, uri: Uri, password: String? = null): PdfEngine {
+                      val fd = context.contentResolver.openFileDescriptor(uri, "r")
+                          ?: throw IllegalStateException("Cannot open $uri")
+                      return try {
+                          val renderer = if (password != null && Build.VERSION.SDK_INT >= 35) {
+                              PdfRenderer(fd, LoadParams.Builder().setPassword(password).build())
+                          } else {
+                              PdfRenderer(fd)
+                          }
+                          PdfEngine(renderer, fd)
+                      } catch (t: Throwable) {
+                          runCatching { fd.close() }
+                          throw t
+                      }
+                  }
+
+                  /** The region of the page that should be shown. Whole page if [trim] is off. */
+                  fun cropFor(page: PageInfo, analysis: Analysis, trim: Boolean): RectF {
+                      val c = page.content
+                      if (!trim || c == null) return RectF(0f, 0f, 1f, 1f)
+                      return RectF(
+                          max(0f, analysis.unionLeft - PAD_X),
+                          max(0f, c.top - PAD_Y),
+                          min(1f, analysis.unionRight + PAD_X),
+                          min(1f, c.bottom + PAD_Y),
+                      )
+                  }
+              }
+          }
+          FITPDF_EOF
+          mkdir -p "$(dirname 'app/src/main/res/drawable/ic_launcher_background.xml')"
+          cat > 'app/src/main/res/drawable/ic_launcher_background.xml' <<'FITPDF_EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp"
+              android:height="108dp"
+              android:viewportWidth="108"
+              android:viewportHeight="108">
+              <path
+                  android:fillColor="#4F46E5"
+                  android:pathData="M0,0h108v108h-108z" />
+          </vector>
+          FITPDF_EOF
+          mkdir -p "$(dirname 'app/src/main/res/drawable/ic_launcher_foreground.xml')"
+          cat > 'app/src/main/res/drawable/ic_launcher_foreground.xml' <<'FITPDF_EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp"
+              android:height="108dp"
+              android:viewportWidth="108"
+              android:viewportHeight="108">
+              <!-- page -->
+              <path
+                  android:fillColor="#FFFFFF"
+                  android:pathData="M38,30h26l10,10v38a3,3 0 0,1 -3,3h-33a3,3 0 0,1 -3,-3v-45a3,3 0 0,1 3,-3z" />
+              <!-- text lines -->
+              <path
+                  android:fillColor="#4F46E5"
+                  android:pathData="M42,52h24v3h-24z M42,60h24v3h-24z M42,68h16v3h-16z" />
+              <!-- corner brackets = "fit" -->
+              <path
+                  android:strokeColor="#FDE047"
+                  android:strokeWidth="3"
+                  android:strokeLineCap="round"
+                  android:pathData="M30,40v-10h10 M78,40v-10h-10 M30,70v10h10 M78,70v10h-10" />
+          </vector>
+          FITPDF_EOF
+          mkdir -p "$(dirname 'app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml')"
+          cat > 'app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml' <<'FITPDF_EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@drawable/ic_launcher_background" />
+              <foreground android:drawable="@drawable/ic_launcher_foreground" />
+          </adaptive-icon>
+          FITPDF_EOF
+          mkdir -p "$(dirname 'app/src/main/res/values-bn/strings.xml')"
+          cat > 'app/src/main/res/values-bn/strings.xml' <<'FITPDF_EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <string name="app_name">FitPDF</string>
+              <string name="tagline">কোনো ফাঁকা জায়গা নেই, শুধু কনটেন্ট</string>
+              <string name="open_pdf">PDF খুলুন</string>
+              <string name="open_another">অন্য ফাইল</string>
+              <string name="close">বন্ধ</string>
+              <string name="trim">ট্রিম</string>
+              <string name="night">নাইট</string>
+              <string name="analyzing">ফাঁকা জায়গা কাটা হচ্ছে… %1$d / %2$d</string>
+              <string name="page_counter">%1$d / %2$d</string>
+              <string name="error_open">PDF টি খোলা যায়নি। ফাইলটি নষ্ট বা পাসওয়ার্ড দেওয়া হতে পারে।</string>
+              <string name="password_title">পাসওয়ার্ড দিন</string>
+              <string name="password_hint">PDF এর পাসওয়ার্ড</string>
+              <string name="password_wrong">পাসওয়ার্ড ভুল, আবার চেষ্টা করুন।</string>
+              <string name="ok">ঠিক আছে</string>
+              <string name="cancel">বাতিল</string>
+              <string name="error_password_old">এই PDF টি পাসওয়ার্ড দিয়ে সুরক্ষিত। এমন ফাইল খুলতে Android 15 বা নতুন সংস্করণ লাগে।</string>
+              <string name="zoom_fmt">%1$s×</string>
+          </resources>
+          FITPDF_EOF
+          mkdir -p "$(dirname 'app/src/main/res/values/strings.xml')"
+          cat > 'app/src/main/res/values/strings.xml' <<'FITPDF_EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <string name="app_name">FitPDF</string>
+              <string name="tagline">No empty margins. Just the content.</string>
+              <string name="open_pdf">Open PDF</string>
+              <string name="open_another">Open another</string>
+              <string name="close">Close</string>
+              <string name="trim">Trim</string>
+              <string name="night">Night</string>
+              <string name="analyzing">Removing empty space… %1$d / %2$d</string>
+              <string name="page_counter">%1$d / %2$d</string>
+              <string name="error_open">Could not open this PDF. It may be damaged or password protected.</string>
+              <string name="password_title">Password required</string>
+              <string name="password_hint">PDF password</string>
+              <string name="password_wrong">Wrong password, try again.</string>
+              <string name="ok">OK</string>
+              <string name="cancel">Cancel</string>
+              <string name="error_password_old">This PDF is password protected. Opening protected PDFs needs Android 15 or newer.</string>
+              <string name="zoom_fmt">%1$s×</string>
+          </resources>
+          FITPDF_EOF
+          mkdir -p "$(dirname 'app/src/main/res/values/themes.xml')"
+          cat > 'app/src/main/res/values/themes.xml' <<'FITPDF_EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <style name="Theme.FitPDF" parent="android:Theme.Material.NoActionBar">
+                  <item name="android:windowBackground">@color/bg</item>
+                  <item name="android:statusBarColor">@android:color/transparent</item>
+                  <item name="android:navigationBarColor">@android:color/transparent</item>
+                  <item name="android:windowLightStatusBar">false</item>
+              </style>
+              <color name="bg">#0F172A</color>
+          </resources>
+          FITPDF_EOF
+          mkdir -p "$(dirname 'build.gradle.kts')"
+          cat > 'build.gradle.kts' <<'FITPDF_EOF'
+          plugins {
+              id("com.android.application") version "8.6.0" apply false
+              id("org.jetbrains.kotlin.android") version "1.9.24" apply false
+          }
+          FITPDF_EOF
+          mkdir -p "$(dirname 'gradle.properties')"
+          cat > 'gradle.properties' <<'FITPDF_EOF'
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          android.nonTransitiveRClass=true
+          kotlin.code.style=official
+          FITPDF_EOF
+          mkdir -p "$(dirname 'settings.gradle.kts')"
+          cat > 'settings.gradle.kts' <<'FITPDF_EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "FitPDF"
+          include(":app")
+          FITPDF_EOF
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Add FitPDF project files [skip ci]"
+          git push || echo "Could not push project files"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.7
+
+      - name: Build debug APK
+        run: gradle assembleDebug --stacktrace
+
+      - name: Rename APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk FitPDF.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FitPDF-apk
+          path: FitPDF.apk
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: FitPDF.apk
+          generate_release_notes: true
