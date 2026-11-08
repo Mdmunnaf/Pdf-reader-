@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">FitPDF</string>
+    <string name="tagline">No empty margins. Just the content.</string>
+    <string name="open_pdf">Open PDF</string>
+    <string name="open_another">Open another</string>
+    <string name="close">Close</string>
+    <string name="trim">Trim</string>
+    <string name="night">Night</string>
+    <string name="analyzing">Removing empty space… %1$d / %2$d</string>
+    <string name="page_counter">%1$d / %2$d</string>
+    <string name="error_open">Could not open this PDF. It may be damaged or password protected.</string>
+    <string name="password_title">Password required</string>
+    <string name="password_hint">PDF password</string>
+    <string name="password_wrong">Wrong password, try again.</string>
+    <string name="ok">OK</string>
+    <string name="cancel">Cancel</string>
+    <string name="error_password_old">This PDF is password protected. Opening protected PDFs needs Android 15 or newer.</string>
+    <string name="zoom_fmt">%1$s×</string>
+</resources>

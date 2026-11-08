@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">FitPDF</string>
+    <string name="tagline">কোনো ফাঁকা জায়গা নেই, শুধু কনটেন্ট</string>
+    <string name="open_pdf">PDF খুলুন</string>
+    <string name="open_another">অন্য ফাইল</string>
+    <string name="close">বন্ধ</string>
+    <string name="trim">ট্রিম</string>
+    <string name="night">নাইট</string>
+    <string name="analyzing">ফাঁকা জায়গা কাটা হচ্ছে… %1$d / %2$d</string>
+    <string name="page_counter">%1$d / %2$d</string>
+    <string name="error_open">PDF টি খোলা যায়নি। ফাইলটি নষ্ট বা পাসওয়ার্ড দেওয়া হতে পারে।</string>
+    <string name="password_title">পাসওয়ার্ড দিন</string>
+    <string name="password_hint">PDF এর পাসওয়ার্ড</string>
+    <string name="password_wrong">পাসওয়ার্ড ভুল, আবার চেষ্টা করুন।</string>
+    <string name="ok">ঠিক আছে</string>
+    <string name="cancel">বাতিল</string>
+    <string name="error_password_old">এই PDF টি পাসওয়ার্ড দিয়ে সুরক্ষিত। এমন ফাইল খুলতে Android 15 বা নতুন সংস্করণ লাগে।</string>
+    <string name="zoom_fmt">%1$s×</string>
+</resources>
